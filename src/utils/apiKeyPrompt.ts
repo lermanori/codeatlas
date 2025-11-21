@@ -1,9 +1,9 @@
 import inquirer from 'inquirer';
-import { existsSync } from 'fs';
+import { existsSync, mkdirSync } from 'fs';
 import { readFile, writeFile } from 'fs/promises';
 import { join } from 'path';
 
-const ENV_FILE = '.env';
+const ENV_FILE = '.ai-docs/.env';
 
 /**
  * Load API key from .env file if it exists
@@ -47,6 +47,12 @@ async function loadApiKeyFromEnv(): Promise<string | null> {
  */
 async function saveApiKeyToEnv(apiKey: string): Promise<void> {
   const envPath = join(process.cwd(), ENV_FILE);
+  
+  // Ensure .ai-docs directory exists
+  const aiDocsDir = join(process.cwd(), '.ai-docs');
+  if (!existsSync(aiDocsDir)) {
+    mkdirSync(aiDocsDir, { recursive: true });
+  }
   
   let content = '';
   let keyFound = false;
@@ -105,7 +111,7 @@ export async function ensureApiKey(): Promise<void> {
   }
 
   // If not found, prompt the user
-  console.log('\nOpenAI API key not found in environment variables or .env file.');
+  console.log('\nOpenAI API key not found in environment variables or .ai-docs/.env file.');
   console.log('CodeAtlas needs an API key to generate documentation with AI.\n');
 
   const answer = await inquirer.prompt([
@@ -131,6 +137,6 @@ export async function ensureApiKey(): Promise<void> {
   
   // Save to .env file for future use
   await saveApiKeyToEnv(apiKey);
-  console.log('✓ API key set for this session and saved to .env file.\n');
+  console.log('✓ API key set for this session and saved to .ai-docs/.env file.\n');
 }
 

@@ -289,11 +289,29 @@ Format the output as clean markdown without frontmatter (that will be added sepa
 async function cleanupPreviousFiles(root: string): Promise<void> {
   const aiDocsPath = join(root, '.ai-docs');
   const cursorRulePath = join(root, '.cursor', 'rules', 'codeatlas.mdc');
+  const envPath = join(aiDocsPath, '.env');
+  
+  // Save .env file if it exists
+  let envContent: string | null = null;
+  if (existsSync(envPath)) {
+    try {
+      envContent = await readFile(envPath, 'utf-8');
+    } catch (err) {
+      // If we can't read it, just continue without it
+    }
+  }
   
   // Remove .ai-docs directory if it exists
   if (existsSync(aiDocsPath)) {
     await rm(aiDocsPath, { recursive: true, force: true });
     console.log('  ✓ Removed previous .ai-docs directory');
+  }
+  
+  // Restore .env file if it existed
+  if (envContent) {
+    await ensureDir(aiDocsPath);
+    await writeFile(envPath, envContent, 'utf-8');
+    console.log('  ✓ Preserved .ai-docs/.env file');
   }
   
   // Remove cursor rule if it exists
@@ -327,7 +345,10 @@ export async function handleInit(options: InitOptions): Promise<void> {
   await ensureDir(join(root, '.ai-docs', 'docs', 'modules'));
   console.log('  ✓ Created .ai-docs/docs/ and .ai-docs/docs/modules/\n');
 
-  // 2. Copy templates
+  // 2. Check for API key (will use existing if found, prompt if missing)
+  await ensureApiKey();
+
+  // 3. Copy templates
   console.log('Copying templates...');
   const templates = ['ai-index.md', 'ai-rules.md', 'ai-decisions.md', 'ai-changelog.md'];
   let templatesCreated = 0;
@@ -340,15 +361,12 @@ export async function handleInit(options: InitOptions): Promise<void> {
   }
   console.log('');
 
-  // 3. Detect code
+  // 4. Detect code
   const hasCode = await hasExistingCode(root);
   
   if (!hasCode) {
     console.log('No existing code detected. Skipping module suggestion.\n');
   } else {
-    // Check for API key before making LLM calls
-    await ensureApiKey();
-    
     console.log('Existing code detected. Analyzing project structure...\n');
 
     // 4. Scan files
