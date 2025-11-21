@@ -1,6 +1,6 @@
 {
   "name": "codeatlas",
-  "version": "0.1.4",
+  "version": "0.2.0",
   "type": "module",
   "description": "AI-readable documentation generator for code projects",
   "readme": "USER_README.md",

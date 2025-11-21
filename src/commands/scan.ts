@@ -85,9 +85,10 @@ function extractMarkdownReferences(content: string, currentDir: string, root: st
     // Normalize path
     resolvedPath = normalize(resolvedPath);
     
-    // Check if file exists and is within docs directory
+    // Check if file exists and is within docs or files directory
     const docsDir = normalize(join(root, '.ai-docs', 'docs'));
-    if (resolvedPath.startsWith(docsDir) && existsSync(resolvedPath)) {
+    const filesDir = normalize(join(root, '.ai-docs', 'files'));
+    if ((resolvedPath.startsWith(docsDir) || resolvedPath.startsWith(filesDir)) && existsSync(resolvedPath)) {
       const relPath = resolvedPath.replace(root + '/', '').replace(root + '\\', '');
       if (!references.includes(relPath)) {
         references.push(relPath);
@@ -258,6 +259,7 @@ function validateHierarchy(tree: TreeData): { circular: string[]; orphaned: stri
 export async function handleScan(options: ScanOptions = {}): Promise<void> {
   const root = process.cwd();
   const docsDir = join(root, '.ai-docs', 'docs');
+  const filesDir = join(root, '.ai-docs', 'files');
   
   if (!existsSync(docsDir)) {
     console.error('Error: .ai-docs/docs/ directory does not exist. Run `ai-docs init` first.');
@@ -266,9 +268,11 @@ export async function handleScan(options: ScanOptions = {}): Promise<void> {
 
   console.log('Scanning documentation files...\n');
 
-  // 1. Find all .md files
-  const mdFiles = await findMarkdownFiles(docsDir, root);
-  console.log(`Found ${mdFiles.length} markdown files`);
+  // 1. Find all .md files in both docs and files directories
+  const docsMdFiles = await findMarkdownFiles(docsDir, root);
+  const filesMdFiles = existsSync(filesDir) ? await findMarkdownFiles(filesDir, root) : [];
+  const mdFiles = [...docsMdFiles, ...filesMdFiles];
+  console.log(`Found ${mdFiles.length} markdown files (${docsMdFiles.length} in docs, ${filesMdFiles.length} in files)`);
 
   if (mdFiles.length === 0) {
     console.log('No markdown files found. Creating empty tree.');

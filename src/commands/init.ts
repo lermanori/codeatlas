@@ -1,6 +1,6 @@
-import { mkdir, copyFile, writeFile, readFile, rm } from 'fs/promises';
+import { mkdir, copyFile, writeFile, readFile, rm, stat } from 'fs/promises';
 import { existsSync } from 'fs';
-import { join, dirname } from 'path';
+import { join, dirname, basename, relative, extname } from 'path';
 import { fileURLToPath } from 'url';
 import inquirer from 'inquirer';
 import { scanProject } from '../utils/fileScanner.js';
@@ -21,6 +21,451 @@ interface ModuleSuggestion {
   title: string;
   description: string;
   order: number;
+}
+
+interface DirectoryNode {
+  path: string;
+  relativePath: string;
+  files: string[];
+  children: DirectoryNode[];
+  parent?: DirectoryNode;
+}
+
+interface FileDocumentation {
+  id: string;
+  title: string;
+  path: string;
+  parentId: string | null;
+  order: number;
+}
+
+/**
+ * Check if a file should be documented
+ */
+function shouldDocumentFile(filePath: string): boolean {
+  const codeExtensions = ['.ts', '.tsx', '.js', '.jsx', '.py', '.go', '.rs', '.java', '.kt'];
+  const configFiles = [
+    'package.json',
+    'package-lock.json',
+    'tsconfig.json',
+    'jsconfig.json',
+    '.env.example',
+    'docker-compose.yml',
+    'docker-compose.yaml',
+    'README.md',
+    'Dockerfile',
+    '.gitignore',
+    '.npmrc',
+    '.nvmrc',
+    'yarn.lock',
+    'pnpm-lock.yaml'
+  ];
+  
+  const ext = extname(filePath).toLowerCase();
+  const fileName = basename(filePath);
+  
+  // Check code extensions
+  if (codeExtensions.includes(ext)) {
+    return true;
+  }
+  
+  // Check config files
+  if (configFiles.includes(fileName)) {
+    return true;
+  }
+  
+  return false;
+}
+
+/**
+ * Generate a sanitized ID from a file path
+ */
+function generateFileId(filePath: string): string {
+  // Remove extension and sanitize
+  const withoutExt = filePath.replace(/\.[^/.]+$/, '');
+  return withoutExt
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '') || 'file';
+}
+
+/**
+ * Generate a sanitized ID from a folder path
+ */
+function generateFolderId(folderPath: string): string {
+  if (!folderPath || folderPath === '.' || folderPath === '') {
+    return 'project-root';
+  }
+  const id = folderPath
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
+  return id || 'folder';
+}
+
+/**
+ * Build directory tree structure from file list
+ */
+function buildDirectoryTree(files: string[], root: string): DirectoryNode {
+  const rootNode: DirectoryNode = {
+    path: root,
+    relativePath: '',
+    files: [],
+    children: []
+  };
+  
+  const nodeMap = new Map<string, DirectoryNode>();
+  nodeMap.set('', rootNode);
+  
+  // Process all files
+  for (const file of files) {
+    const fileDir = dirname(file);
+    const fileName = basename(file);
+    
+    // Ensure directory path exists in tree
+    const dirParts = fileDir === '.' ? [] : fileDir.split('/').filter(p => p);
+    let currentPath = '';
+    let currentNode = rootNode;
+    
+    for (const part of dirParts) {
+      const nextPath = currentPath ? `${currentPath}/${part}` : part;
+      
+      if (!nodeMap.has(nextPath)) {
+        const newNode: DirectoryNode = {
+          path: join(root, nextPath),
+          relativePath: nextPath,
+          files: [],
+          children: [],
+          parent: currentNode
+        };
+        nodeMap.set(nextPath, newNode);
+        currentNode.children.push(newNode);
+      }
+      
+      currentNode = nodeMap.get(nextPath)!;
+      currentPath = nextPath;
+    }
+    
+    // Add file to current directory
+    currentNode.files.push(file);
+  }
+  
+  return rootNode;
+}
+
+/**
+ * Get all files in a directory tree (for bottom-up processing)
+ */
+function getAllFilesInOrder(node: DirectoryNode): Array<{node: DirectoryNode, file: string}> {
+  const result: Array<{node: DirectoryNode, file: string}> = [];
+  
+  function traverse(n: DirectoryNode) {
+    // Process children first (deeper levels)
+    for (const child of n.children) {
+      traverse(child);
+    }
+    // Then process files in this node
+    for (const file of n.files) {
+      result.push({ node: n, file });
+    }
+  }
+  
+  traverse(node);
+  return result;
+}
+
+/**
+ * Get all folders in order (for bottom-up processing)
+ */
+function getAllFoldersInOrder(node: DirectoryNode): DirectoryNode[] {
+  const result: DirectoryNode[] = [];
+  
+  function traverse(n: DirectoryNode) {
+    // Process children first (deeper levels)
+    for (const child of n.children) {
+      traverse(child);
+      result.push(child);
+    }
+  }
+  
+  traverse(node);
+  return result;
+}
+
+/**
+ * Generate documentation for a single file
+ */
+async function generateFileDocumentation(
+  filePath: string,
+  root: string,
+  parentNode: DirectoryNode
+): Promise<FileDocumentation> {
+  const fullPath = join(root, filePath);
+  const fileContent = await readFile(fullPath, 'utf-8');
+  const ext = extname(filePath).toLowerCase();
+  const fileName = basename(filePath);
+  
+  const isConfig = !['.ts', '.tsx', '.js', '.jsx', '.py', '.go', '.rs', '.java', '.kt'].includes(ext);
+  const fileType = isConfig ? 'config' : 'code';
+  
+  // Limit content size for LLM (first 5000 chars for code, full for config)
+  const contentPreview = isConfig 
+    ? fileContent 
+    : fileContent.split('\n').slice(0, 200).join('\n') + (fileContent.length > 5000 ? '\n... (truncated)' : '');
+  
+  const prompt = `You are documenting a source file for an AI assistant. Generate comprehensive markdown documentation.
+
+File: ${filePath}
+Type: ${fileType}
+Content:
+\`\`\`
+${contentPreview}
+\`\`\`
+
+Generate markdown that includes:
+1. **Purpose**: What this file does
+2. **Key Components**: Main exports, functions, classes, or configuration
+3. **Dependencies**: What it imports/uses or depends on
+4. **Usage**: How it's used in the project
+5. **Important Notes**: Any special considerations
+
+Format as clean markdown without frontmatter (that will be added separately).`;
+
+  const response = await callLLM({
+    command: 'init',
+    category: 'init.file-docs',
+    messages: [
+      {
+        role: 'system',
+        content: 'You are a technical documentation expert. Generate clear, concise file documentation for AI assistants.'
+      },
+      {
+        role: 'user',
+        content: prompt
+      }
+    ]
+  });
+
+  const content = response.choices[0]?.message?.content || `# ${fileName}\n\nDocumentation for ${filePath}`;
+  
+  // Generate IDs
+  const fileId = generateFileId(filePath);
+  const parentId = parentNode.relativePath ? generateFolderId(parentNode.relativePath) : 'project-root';
+  
+  // Create frontmatter
+  const frontmatter = `---
+id: ${fileId}
+title: ${fileName}
+parent: ${parentId}
+order: 0
+path: .ai-docs/files/${filePath}.md
+---
+
+`;
+  
+  // Save file
+  const docPath = join(root, '.ai-docs', 'files', `${filePath}.md`);
+  await ensureDir(dirname(docPath));
+  await writeFile(docPath, frontmatter + content, 'utf-8');
+  
+  return {
+    id: fileId,
+    title: fileName,
+    path: `.ai-docs/files/${filePath}.md`,
+    parentId: parentId === 'root' ? null : parentId,
+    order: 0
+  };
+}
+
+/**
+ * Generate documentation for a folder
+ */
+async function generateFolderDocumentation(
+  node: DirectoryNode,
+  root: string,
+  childDocs: Array<{path: string, title: string, type: 'file'|'folder', summary?: string}>
+): Promise<FileDocumentation> {
+  const folderName = node.relativePath ? basename(node.relativePath) : 'Project Root';
+  const folderId = generateFolderId(node.relativePath);
+  const parentId = node.parent 
+    ? (node.parent.relativePath ? generateFolderId(node.parent.relativePath) : 'project-root')
+    : null;
+  
+  // Build children list
+  const childrenList = childDocs.map(child => {
+    const summary = child.summary ? ` - ${child.summary.substring(0, 100)}...` : '';
+    return `- **${child.title}** (${child.type})${summary}`;
+  }).join('\n');
+  
+  const prompt = `You are documenting a directory/folder for an AI assistant. Generate a summary markdown.
+
+Folder: ${node.relativePath || 'Project Root'}
+Contains:
+${childrenList}
+
+Generate markdown that includes:
+1. **Purpose**: What this folder contains and its role in the project
+2. **Structure**: Overview of organization and how files/folders are organized
+3. **Key Files**: Important files and their roles
+4. **Relationships**: How files/folders relate to each other
+
+Include references to child files/folders. Format as clean markdown without frontmatter.`;
+
+  const response = await callLLM({
+    command: 'init',
+    category: 'init.folder-docs',
+    messages: [
+      {
+        role: 'system',
+        content: 'You are a technical documentation expert. Generate clear, concise folder documentation for AI assistants.'
+      },
+      {
+        role: 'user',
+        content: prompt
+      }
+    ]
+  });
+
+  const content = response.choices[0]?.message?.content || `# ${folderName}\n\nDocumentation for ${node.relativePath || 'project root'}`;
+  
+  // Create frontmatter
+  const frontmatter = `---
+id: ${folderId}
+title: ${folderName}
+parent: ${parentId || 'null'}
+order: 0
+path: .ai-docs/files/${node.relativePath ? node.relativePath + '/README.md' : 'README.md'}
+---
+
+`;
+  
+  // Save folder README
+  const docPath = join(root, '.ai-docs', 'files', node.relativePath || '', 'README.md');
+  await ensureDir(dirname(docPath));
+  await writeFile(docPath, frontmatter + content, 'utf-8');
+  
+  return {
+    id: folderId,
+    title: folderName,
+    path: `.ai-docs/files/${node.relativePath ? node.relativePath + '/README.md' : 'README.md'}`,
+    parentId,
+    order: 0
+  };
+}
+
+/**
+ * Process directory tree bottom-up (files first, then folders, then root)
+ */
+async function processBottomUp(
+  tree: DirectoryNode,
+  root: string
+): Promise<FileDocumentation[]> {
+  const allDocs: FileDocumentation[] = [];
+  const fileDocs = new Map<string, FileDocumentation>();
+  const folderDocs = new Map<string, FileDocumentation>();
+  
+  // Step 1: Process all files (deepest first)
+  const filesInOrder = getAllFilesInOrder(tree);
+  console.log(`\nProcessing ${filesInOrder.length} files...`);
+  
+  for (let i = 0; i < filesInOrder.length; i++) {
+    const { node, file } = filesInOrder[i];
+    process.stdout.write(`  Processing file ${i + 1}/${filesInOrder.length}: ${file}\r`);
+    
+    try {
+      const doc = await generateFileDocumentation(file, root, node);
+      fileDocs.set(file, doc);
+      allDocs.push(doc);
+    } catch (err) {
+      console.error(`\n  ⚠ Error processing ${file}: ${err}`);
+    }
+  }
+  console.log(`\n  ✓ Processed ${filesInOrder.length} files\n`);
+  
+  // Step 2: Process all folders (deepest first)
+  const foldersInOrder = getAllFoldersInOrder(tree);
+  console.log(`Processing ${foldersInOrder.length} folders...`);
+  
+  for (let i = 0; i < foldersInOrder.length; i++) {
+    const folder = foldersInOrder[i];
+    process.stdout.write(`  Processing folder ${i + 1}/${foldersInOrder.length}: ${folder.relativePath || 'root'}\r`);
+    
+    try {
+      // Collect child documentation
+      const childDocs: Array<{path: string, title: string, type: 'file'|'folder', summary?: string}> = [];
+      
+      // Add child files
+      for (const file of folder.files) {
+        const fileDoc = fileDocs.get(file);
+        if (fileDoc) {
+          childDocs.push({
+            path: fileDoc.path,
+            title: fileDoc.title,
+            type: 'file'
+          });
+        }
+      }
+      
+      // Add child folders
+      for (const childFolder of folder.children) {
+        const folderDoc = folderDocs.get(childFolder.relativePath);
+        if (folderDoc) {
+          childDocs.push({
+            path: folderDoc.path,
+            title: folderDoc.title,
+            type: 'folder'
+          });
+        }
+      }
+      
+      const doc = await generateFolderDocumentation(folder, root, childDocs);
+      folderDocs.set(folder.relativePath, doc);
+      allDocs.push(doc);
+    } catch (err) {
+      console.error(`\n  ⚠ Error processing folder ${folder.relativePath}: ${err}`);
+    }
+  }
+  console.log(`\n  ✓ Processed ${foldersInOrder.length} folders\n`);
+  
+  // Step 3: Process root
+  if (tree.relativePath === '') {
+    console.log('Processing root...');
+    try {
+      const childDocs: Array<{path: string, title: string, type: 'file'|'folder'}> = [];
+      
+      // Add root files
+      for (const file of tree.files) {
+        const fileDoc = fileDocs.get(file);
+        if (fileDoc) {
+          childDocs.push({
+            path: fileDoc.path,
+            title: fileDoc.title,
+            type: 'file'
+          });
+        }
+      }
+      
+      // Add top-level folders
+      for (const childFolder of tree.children) {
+        const folderDoc = folderDocs.get(childFolder.relativePath);
+        if (folderDoc) {
+          childDocs.push({
+            path: folderDoc.path,
+            title: folderDoc.title,
+            type: 'folder'
+          });
+        }
+      }
+      
+      const rootDoc = await generateFolderDocumentation(tree, root, childDocs);
+      allDocs.push(rootDoc);
+      console.log('  ✓ Processed root\n');
+    } catch (err) {
+      console.error(`\n  ⚠ Error processing root: ${err}`);
+    }
+  }
+  
+  return allDocs;
 }
 
 /**
@@ -360,7 +805,8 @@ export async function handleInit(options: InitOptions): Promise<void> {
   await ensureDir(join(root, '.ai-docs'));
   await ensureDir(join(root, '.ai-docs', 'docs'));
   await ensureDir(join(root, '.ai-docs', 'docs', 'modules'));
-  console.log('  ✓ Created .ai-docs/docs/ and .ai-docs/docs/modules/\n');
+  await ensureDir(join(root, '.ai-docs', 'files'));
+  console.log('  ✓ Created .ai-docs/docs/, .ai-docs/docs/modules/, and .ai-docs/files/\n');
 
   // 2. Check for API key (will use existing if found, prompt if missing)
   await ensureApiKey();
@@ -378,139 +824,48 @@ export async function handleInit(options: InitOptions): Promise<void> {
   }
   console.log('');
 
-  // 4. Detect code
+  // 4. Detect code and generate recursive documentation
   const hasCode = await hasExistingCode(root);
   
   if (!hasCode) {
-    console.log('No existing code detected. Skipping module suggestion.\n');
+    console.log('No existing code detected. Skipping documentation generation.\n');
   } else {
-    console.log('Existing code detected. Analyzing project structure...\n');
+    console.log('Existing code detected. Generating recursive documentation tree...\n');
 
     // 4. Scan files
     console.log('Scanning project files...');
     const allFiles = await scanProject(root);
     console.log(`  ✓ Found ${allFiles.length} files\n`);
 
-    // 5. Build summary and get module suggestions
-    console.log('Analyzing project structure and suggesting modules...');
-    const summary = buildProjectSummary(allFiles);
+    // 5. Filter to files that should be documented
+    const filesToDocument = allFiles.filter(shouldDocumentFile);
+    console.log(`  ✓ ${filesToDocument.length} files will be documented (code + config files)\n`);
 
-    const suggestionPrompt = `You are analyzing a codebase to suggest logical modules for documentation.
-
-${summary}
-
-Suggest 3-7 modules that would help organize this codebase. For each module, provide:
-- id: A short slug identifier (e.g., "auth", "billing")
-- title: A human-readable title (e.g., "Authentication Module")
-- description: A brief description of what this module covers
-- order: A number for sorting (10, 20, 30, etc.)
-
-Return your response as a JSON array of objects with these fields.`;
-
-    const suggestionResponse = await callLLM({
-      command: 'init',
-      category: 'init.suggest-modules',
-      messages: [
-        {
-          role: 'system',
-          content: 'You are a software architecture expert. Analyze codebases and suggest logical module boundaries for documentation.'
-        },
-        {
-          role: 'user',
-          content: suggestionPrompt
-        }
-      ]
-    });
-
-    const suggestions = parseModuleSuggestions(suggestionResponse);
-    console.log(`  ✓ Generated ${suggestions.length} module suggestions\n`);
-
-    if (suggestions.length === 0) {
-      console.log('No modules could be suggested. You can add modules later with `ai-docs add-module`.\n');
+    if (filesToDocument.length === 0) {
+      console.log('No files to document found.\n');
     } else {
-      // 6. Interactive selection
-      console.log('Module Suggestions:');
-      suggestions.forEach((s, i) => {
-        console.log(`\n${i + 1}. ${s.title} (${s.id})`);
-        console.log(`   ${s.description}`);
-      });
-      console.log('');
+      // 6. Build directory tree
+      console.log('Building directory tree structure...');
+      const directoryTree = buildDirectoryTree(filesToDocument, root);
+      console.log('  ✓ Directory tree built\n');
 
-      const answers = await inquirer.prompt([
-        {
-          type: 'checkbox',
-          name: 'selectedModules',
-          message: 'Select modules to create (use space to toggle, enter to confirm):',
-          choices: suggestions.map(s => ({
-            name: `${s.title} (${s.id}) - ${s.description}`,
-            value: s,
-            checked: true
-          }))
-        }
-      ]);
+      // 7. Process bottom-up (files → folders → root)
+      const allDocs = await processBottomUp(directoryTree, root);
 
-      const selectedModules = answers.selectedModules as ModuleSuggestion[];
-
-      if (selectedModules.length > 0) {
-        // Allow editing
-        const editAnswers = await inquirer.prompt(
-          selectedModules.map((module, idx) => [
-            {
-              type: 'input',
-              name: `title_${idx}`,
-              message: `Edit title for "${module.title}":`,
-              default: module.title
-            },
-            {
-              type: 'input',
-              name: `id_${idx}`,
-              message: `Edit ID for "${module.title}" (slug format, no spaces):`,
-              default: module.id,
-              validate: (input: string) => {
-                if (!input || input.trim().length === 0) {
-                  return 'ID cannot be empty';
-                }
-                if (/\s/.test(input)) {
-                  return 'ID cannot contain spaces';
-                }
-                if (!/^[a-z0-9-]+$/.test(input)) {
-                  return 'ID must be lowercase alphanumeric with hyphens only';
-                }
-                return true;
-              }
-            }
-          ]).flat()
-        );
-
-        // Update modules with edited values
-        selectedModules.forEach((module, idx) => {
-          const newTitle = editAnswers[`title_${idx}`];
-          const newId = editAnswers[`id_${idx}`];
-          if (newTitle) module.title = newTitle;
-          if (newId) module.id = newId;
+      // 8. Run scan to build ai-tree.json
+      console.log('Building documentation tree (ai-tree.json)...');
+      try {
+        const scanModule = await import('./scan.js');
+        // Scan will automatically find all .md files in .ai-docs/docs and .ai-docs/files
+        await scanModule.handleScan({ 
+          analyzeCode: false, 
+          suggestOnly: false, 
+          autoLink: false 
         });
-
-        // 7. Generate module docs
-        console.log('\nGenerating module documentation...');
-        for (const module of selectedModules) {
-          console.log(`  Generating ${module.title}...`);
-          const relatedFiles = findRelatedFiles(allFiles, module);
-          const content = await generateModuleDoc(module, relatedFiles);
-
-          const frontmatter = `---
-id: ${module.id}
-title: ${module.title}
-parent: root
-order: ${module.order}
----
-
-`;
-
-          const modulePath = join(root, '.ai-docs', 'docs', 'modules', `${module.id}.md`);
-          await writeFile(modulePath, frontmatter + content, 'utf-8');
-          console.log(`    ✓ Created .ai-docs/docs/modules/${module.id}.md`);
-        }
-        console.log('');
+        console.log('  ✓ Documentation tree built\n');
+      } catch (err: any) {
+        console.warn(`  ⚠ Warning: Could not build ai-tree.json: ${err?.message || err}`);
+        console.log('  You can run `ai-docs scan` manually to build the tree.\n');
       }
     }
   }
@@ -601,22 +956,38 @@ order: ${module.order}
   console.log(`  - Templates created: ${templatesCreated}`);
   if (hasCode) {
     const { readdir } = await import('fs/promises');
-    const modulesDir = join(root, '.ai-docs', 'docs', 'modules');
-    let moduleCount = 0;
+    const filesDir = join(root, '.ai-docs', 'files');
+    let fileCount = 0;
     try {
-      if (existsSync(modulesDir)) {
-        const files = await readdir(modulesDir);
-        moduleCount = files.filter(f => f.endsWith('.md')).length;
+      if (existsSync(filesDir)) {
+        // Count all .md files recursively
+        async function countFiles(dir: string): Promise<number> {
+          let count = 0;
+          try {
+            const entries = await readdir(dir, { withFileTypes: true });
+            for (const entry of entries) {
+              const fullPath = join(dir, entry.name);
+              if (entry.isDirectory()) {
+                count += await countFiles(fullPath);
+              } else if (entry.isFile() && entry.name.endsWith('.md')) {
+                count++;
+              }
+            }
+          } catch {
+            // Ignore errors
+          }
+          return count;
+        }
+        fileCount = await countFiles(filesDir);
       }
     } catch {
       // Ignore errors
     }
-    console.log(`  - Modules generated: ${moduleCount}`);
+    console.log(`  - Files documented: ${fileCount}`);
   }
   console.log(`  - Token usage: ${initUsage.total_tokens} tokens (${initUsage.prompt_tokens} prompt + ${initUsage.completion_tokens} completion)`);
   console.log('\nNext steps:');
-  console.log('  - Run `ai-docs scan` to build the documentation tree');
+  console.log('  - Run `ai-docs scan` to update the documentation tree');
   console.log('  - Run `ai-docs dev` to view your documentation');
-  console.log('  - Run `ai-docs add-module` to add more modules');
 }
 
