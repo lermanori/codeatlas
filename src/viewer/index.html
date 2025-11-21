@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CodeAtlas | Documentation Viewer</title>
+  <link rel="stylesheet" href="/style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="cyber-grid"></div>
+  <div class="container">
+    <header>
+      <div class="header-content">
+        <h1 class="glitch" data-text="CodeAtlas">CodeAtlas</h1>
+        <div class="subtitle">DOCUMENTATION VIEWER</div>
+      </div>
+      <div class="header-stats">
+        <div class="stat-item">
+          <span class="stat-label">STATUS</span>
+          <span class="stat-value online">ONLINE</span>
+        </div>
+      </div>
+    </header>
+    
+    <div class="main-content">
+      <div class="tree-panel cyber-panel">
+        <div class="panel-header">
+          <h2>NAVIGATION</h2>
+          <div class="panel-line"></div>
+        </div>
+        <div id="tree-container">
+          <div class="loading">Loading documentation tree...</div>
+        </div>
+      </div>
+      
+      <div class="content-panel cyber-panel">
+        <div class="panel-header">
+          <h2>CONTENT</h2>
+          <div class="panel-line"></div>
+        </div>
+        <div id="content-container">
+          <div class="empty-content">
+            <div class="scan-line"></div>
+            <p>Select a document from the navigation tree</p>
+          </div>
+        </div>
+      </div>
+      
+      <div class="usage-panel cyber-panel">
+        <div class="panel-header">
+          <div class="panel-header-top">
+            <h2>TOKEN USAGE</h2>
+            <div class="model-selector-wrapper">
+              <label for="model-select" class="model-label">MODEL:</label>
+              <select id="model-select" class="model-select">
+                <option value="gpt-4">GPT-4</option>
+                <option value="gpt-4-turbo">GPT-4 Turbo</option>
+                <option value="gpt-4o">GPT-4o</option>
+                <option value="gpt-4o-mini">GPT-4o Mini</option>
+                <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
+                <option value="o1-preview">O1 Preview</option>
+                <option value="o1-mini">O1 Mini</option>
+              </select>
+              <span id="model-pricing" class="model-pricing"></span>
+            </div>
+          </div>
+          <div class="panel-line"></div>
+        </div>
+        <div id="usage-container">
+          <div class="loading">Loading usage statistics...</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <script src="/viewer.js"></script>
+</body>
+</html>
+

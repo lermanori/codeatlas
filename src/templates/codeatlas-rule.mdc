@@ -1,0 +1,72 @@
+---
+description: "CodeAtlas documentation conventions and changelog tracking"
+---
+
+# CodeAtlas Rule
+
+This rule instructs Cursor to follow CodeAtlas documentation conventions when editing code.
+
+## Before Editing Code
+
+1. **Read Project Documentation:**
+   - Read `.ai-docs/docs/ai-index.md` for project overview
+   - Read `.ai-docs/docs/ai-rules.md` for coding guidelines and constraints
+   - Identify and read relevant module documentation from `.ai-docs/docs/modules/` based on the files being edited
+
+2. **Review Architecture Decisions:**
+   - Check `.ai-docs/docs/ai-decisions.md` for relevant architecture decisions
+   - Respect established patterns and constraints
+
+## While Editing Code
+
+1. **Follow Guidelines:**
+   - Adhere to code style defined in `ai-rules.md`
+   - Respect architecture constraints
+   - Maintain existing patterns where appropriate
+   - Do not introduce new frameworks or major dependencies without approval
+
+2. **Understand Context:**
+   - Reference module documentation for understanding module purpose
+   - Follow patterns described in module docs
+   - Maintain invariants and constraints documented in modules
+
+## After Editing Code
+
+1. **Update Changelog:**
+   - Append entry to `.ai-docs/docs/ai-changelog.md` with:
+     - Date (YYYY-MM-DD format)
+     - List of files changed
+     - Summary of changes
+     - Any relevant notes
+
+2. **Update Module Documentation:**
+   - If functionality changed, update the relevant module doc in `.ai-docs/docs/modules/`
+   - Update module purpose if it has changed
+   - Update key files list if files were added/removed
+   - Update important entities/types if they changed
+   - Update constraints/invariants if they changed
+
+3. **Respect Decisions:**
+   - Do not violate architecture decisions in `.ai-docs/docs/ai-decisions.md`
+   - If a change requires a new architecture decision, document it in `.ai-docs/docs/ai-decisions.md`
+
+## File Patterns
+
+This rule applies to:
+- `**/*.ts`
+- `**/*.tsx`
+- `**/*.js`
+- `**/*.jsx`
+- `**/*.py`
+- `**/*.go`
+- `**/*.rs`
+- `**/*.java`
+- `**/*.kt`
+
+## Summary
+
+Always:
+1. Read relevant documentation before making changes
+2. Follow established patterns and constraints
+3. Update documentation after making changes
+4. Record changes in the changelog

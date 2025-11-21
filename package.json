@@ -1,0 +1,67 @@
+{
+  "name": "codeatlas",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "AI-readable documentation generator for code projects",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "ai-docs": "./dist/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "USER_README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
+  "scripts": {
+    "build": "tsc && npm run copy-assets",
+    "copy-assets": "node -e \"const fs=require('fs');const path=require('path');function cp(src,dest){const stat=fs.statSync(src);if(stat.isDirectory()){if(!fs.existsSync(dest))fs.mkdirSync(dest,{recursive:true});fs.readdirSync(src).forEach(f=>cp(path.join(src,f),path.join(dest,f)))}else{fs.copyFileSync(src,dest)}}cp('src/templates','dist/templates');cp('src/viewer','dist/viewer')\"",
+    "prepublishOnly": "npm run build",
+    "dev": "ts-node src/index.ts",
+    "start": "node dist/index.js"
+  },
+  "keywords": [
+    "documentation",
+    "ai",
+    "cli",
+    "code-atlas",
+    "cursor",
+    "ai-assistant",
+    "documentation-generator",
+    "markdown",
+    "llm",
+    "code-documentation",
+    "ai-tools"
+  ],
+  "author": "Ori Lerman <lermanori@gmail.com>",
+  "license": "UNLICENSED",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/lermanori/codeatlas.git"
+  },
+  "bugs": {
+    "url": "https://github.com/lermanori/codeatlas/issues"
+  },
+  "homepage": "https://github.com/lermanori/codeatlas#readme",
+  "dependencies": {
+    "yargs": "^17.7.2",
+    "fs-extra": "^11.2.0",
+    "openai": "^4.28.0",
+    "js-yaml": "^4.1.0",
+    "inquirer": "^9.2.15"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.3",
+    "@types/node": "^20.11.5",
+    "@types/yargs": "^17.0.33",
+    "@types/js-yaml": "^4.0.9",
+    "@types/inquirer": "^9.0.7",
+    "ts-node": "^10.9.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
+

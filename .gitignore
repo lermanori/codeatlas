@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.ai-docs/
+*.log
+.DS_Store
+.env
+*.tsbuildinfo
+plans/
+

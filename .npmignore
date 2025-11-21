@@ -1,0 +1,16 @@
+src/
+tsconfig.json
+node_modules/
+.git/
+.gitignore
+.DS_Store
+*.log
+.env
+*.tsbuildinfo
+plans/
+general-docs/
+.vscode/
+.idea/
+.cursor/
+.ai-docs/
+

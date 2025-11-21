@@ -1,0 +1,118 @@
+---
+description: "CodeAtlas documentation conventions and changelog tracking"
+alwaysApply: true
+---
+
+# CodeAtlas Rule
+
+This rule instructs Cursor to follow CodeAtlas documentation conventions when editing code.
+
+## Understanding the Documentation Tree
+
+1. **Load the Tree Structure First:**
+   - Always start by reading `.ai-docs/docs/ai-tree.json` to understand the documentation hierarchy
+   - The tree maps modules to source files via `sourceFiles` arrays
+   - Use the tree's `parent`/`children` relationships to understand module hierarchy
+   - Each entry contains: `id`, `title`, `parent`, `order`, `path`, `children`, and optionally `sourceFiles`
+
+2. **Find Relevant Modules for Files:**
+   - When editing a file, search `ai-tree.json` for modules where:
+     - The file path matches an entry in the module's `sourceFiles` array
+     - The file path contains keywords matching the module `id` or `title`
+     - The file's directory structure suggests a module relationship
+   - Read all parent modules in the hierarchy (follow `parent` links up to `root`) to understand context
+   - Read sibling modules (entries with the same `parent`) if they're closely related
+   - Check `references` arrays if present to find related documentation
+
+## Before Editing Code
+
+1. **Load Documentation Tree:**
+   - **First, read `.ai-docs/docs/ai-tree.json`** to understand the documentation structure
+   - Parse the JSON to understand module relationships and file mappings
+
+2. **Read Project Documentation:**
+   - Read `.ai-docs/docs/ai-index.md` for project overview (entry with `id: "root"`)
+   - Read `.ai-docs/docs/ai-rules.md` for coding guidelines and constraints
+   - Check `.ai-docs/docs/ai-decisions.md` for relevant architecture decisions
+
+3. **Identify Relevant Modules:**
+   - **Query `ai-tree.json` to find modules related to the files being edited:**
+     - Search for entries where `sourceFiles` contains the file path being edited
+     - Match file paths/directories to module IDs or titles
+     - Consider parent-child relationships in the tree
+   - **Read relevant module documentation:**
+     - Read the matched module docs using the `path` field from the tree entry
+     - Read parent modules by following `parent` links up to `root`
+     - Read referenced modules (check `references` in tree entries if present)
+     - Read sibling modules (entries with the same `parent`) for related context
+   - If no module matches, check if the file should be linked to an existing module
+
+## While Editing Code
+
+1. **Follow Guidelines:**
+   - Adhere to code style defined in `ai-rules.md`
+   - Respect architecture constraints
+   - Maintain existing patterns where appropriate
+   - Do not introduce new frameworks or major dependencies without approval
+
+2. **Understand Context:**
+   - Reference module documentation for understanding module purpose
+   - Follow patterns described in module docs
+   - Maintain invariants and constraints documented in modules
+   - **Consider the module hierarchy when making changes**
+   - **Respect relationships between modules** (parent-child, siblings)
+
+## After Editing Code
+
+1. **Update Changelog:**
+   - Append entry to `.ai-docs/docs/ai-changelog.md` with:
+     - Date (YYYY-MM-DD format)
+     - List of files changed
+     - Summary of changes
+     - Any relevant notes
+
+2. **Update Module Documentation:**
+   - If functionality changed, update the relevant module doc in `.ai-docs/docs/modules/`
+   - Update module purpose if it has changed
+   - Update key files list if files were added/removed
+   - Update important entities/types if they changed
+   - Update constraints/invariants if they changed
+   - **If new files were created, consider running `ai-docs scan` to update `ai-tree.json`**
+
+3. **Respect Decisions:**
+   - Do not violate architecture decisions in `.ai-docs/docs/ai-decisions.md`
+   - If a change requires a new architecture decision, document it in `.ai-docs/docs/ai-decisions.md`
+
+## File Patterns
+
+This rule applies to:
+- `**/*.ts`
+- `**/*.tsx`
+- `**/*.js`
+- `**/*.jsx`
+- `**/*.py`
+- `**/*.go`
+- `**/*.rs`
+- `**/*.java`
+- `**/*.kt`
+
+## Example: Finding Modules for a File
+
+When editing `src/commands/scan.ts`:
+1. Load `.ai-docs/docs/ai-tree.json`
+2. Search for entries where `sourceFiles` contains `src/commands/scan.ts`
+3. Find entry with `id: "commands"` that has this file in its `sourceFiles` array
+4. Read the module doc at `path: ".ai-docs/docs/modules/commands.md"`
+5. Follow `parent: "root"` to read the root overview
+6. Check `children` array for related sub-modules
+
+## Summary
+
+Always:
+1. **Load `ai-tree.json` first to understand the documentation structure**
+2. **Use the tree to find relevant modules based on file paths**
+3. **Read parent and related modules for full context**
+4. Read relevant documentation before making changes
+5. Follow established patterns and constraints
+6. Update documentation after making changes
+7. Record changes in the changelog
