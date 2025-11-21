@@ -24,15 +24,32 @@ interface ModuleSuggestion {
 }
 
 /**
- * Check if project has existing code
+ * Check if project has existing code by recursively scanning for code files
  */
 async function hasExistingCode(root: string): Promise<boolean> {
-  const codeDirs = ['src', 'apps', 'packages', 'server', 'lib'];
-  for (const dir of codeDirs) {
-    if (existsSync(join(root, dir))) {
-      return true;
+  const codeExtensions = ['.ts', '.tsx', '.js', '.jsx', '.py', '.go', '.rs', '.java', '.kt'];
+  
+  try {
+    // Scan the entire project for code files
+    const allFiles = await scanProject(root);
+    
+    // Check if any files have code extensions
+    for (const file of allFiles) {
+      const ext = file.substring(file.lastIndexOf('.'));
+      if (codeExtensions.includes(ext)) {
+        return true;
+      }
+    }
+  } catch (err) {
+    // If scanning fails, fall back to checking common directories
+    const codeDirs = ['src', 'apps', 'packages', 'server', 'lib', 'backend', 'frontend'];
+    for (const dir of codeDirs) {
+      if (existsSync(join(root, dir))) {
+        return true;
+      }
     }
   }
+  
   return false;
 }
 

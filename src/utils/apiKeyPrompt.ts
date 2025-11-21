@@ -107,6 +107,7 @@ export async function ensureApiKey(): Promise<void> {
   const savedKey = await loadApiKeyFromEnv();
   if (savedKey) {
     process.env.OPENAI_API_KEY = savedKey;
+    console.log('✓ API key loaded from .ai-docs/.env\n');
     return; // API key loaded from .env
   }
 
